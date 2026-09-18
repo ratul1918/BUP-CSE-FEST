@@ -43,6 +43,20 @@ async def generic_exception_handler(request: Request, exc: Exception):
         content={"detail": "An internal error occurred during optimization. Please verify scenario parameters."}
     )
 
+@app.get("/")
+async def root():
+    """Welcome endpoint for human visitors and browser checks."""
+    return {
+        "service": "GridWise LLM - Smart Campus Energy Optimization Service",
+        "event": "BUP CSE Fest 2026 Hackathon",
+        "status": "online",
+        "endpoints": {
+            "health": "GET /health",
+            "optimize_energy": "POST /optimize-energy",
+            "api_docs": "GET /docs"
+        }
+    }
+
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint required by the judging harness."""
