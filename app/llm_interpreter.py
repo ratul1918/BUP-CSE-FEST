@@ -43,6 +43,7 @@ Supported directive types:
   - "from 11 AM until 1 PM" -> [11, 12]
   - "7 PM until 10 PM" -> [19, 20, 21]
 
+
 ### OUTPUT FORMAT:
 Return ONLY a valid JSON array of objects with keys:
 [
@@ -54,7 +55,50 @@ Return ONLY a valid JSON array of objects with keys:
     "explanation": str
   }
 ]
+
+### FEW-SHOT EXAMPLES:
+
+Example 1:
+Battery capacity: 200 kWh
+Notes:
+[0] "Expect an 80% reduction in rooftop solar between 11 AM and 2 PM because of inverter work."
+[1] "The student affairs office will publish club notices tomorrow."
+Output:
+[
+  {"note_index": 0, "applies": true, "directive_type": "solar_reduction", "structured_adjustment": {"hours": [11, 12, 13], "factor": 0.2}, "explanation": "An 80% reduction means only 20% of forecast solar remains (factor = 0.2) during hours 11-13."},
+  {"note_index": 1, "applies": false, "directive_type": "no_op", "structured_adjustment": null, "explanation": "Club notices are unrelated to the energy schedule."}
+]
+
+Example 2:
+Battery capacity: 200 kWh
+Notes:
+[0] "Keep at least 50% of the battery capacity stored in the battery from 6 PM until 9 PM for emergency operations."
+Output:
+[
+  {"note_index": 0, "applies": true, "directive_type": "minimum_battery_reserve", "structured_adjustment": {"hours": [18, 19, 20], "minimum_energy_kwh": 100}, "explanation": "50% of 200 kWh capacity = 100 kWh minimum reserve required during hours 18-20."}
+]
+
+Example 3:
+Battery capacity: 300 kWh
+Notes:
+[0] "The battery charger will be isolated from 2 AM until 5 AM for electrical maintenance."
+[1] "Do not discharge the battery from 5 PM until 7 PM during relay testing."
+Output:
+[
+  {"note_index": 0, "applies": true, "directive_type": "no_charge_window", "structured_adjustment": {"hours": [2, 3, 4]}, "explanation": "Charger isolation prevents charging during hours 2-4."},
+  {"note_index": 1, "applies": true, "directive_type": "no_discharge_window", "structured_adjustment": {"hours": [17, 18]}, "explanation": "Battery must not discharge during relay testing hours 17-18."}
+]
+
+Example 4:
+Battery capacity: 250 kWh
+Notes:
+[0] "From 6 PM until 9 PM, campus grid import must not exceed 155 kWh in any hour because the feeder is operating under a temporary limit."
+Output:
+[
+  {"note_index": 0, "applies": true, "directive_type": "max_grid_window", "structured_adjustment": {"hours": [18, 19, 20], "max_grid_kwh": 155}, "explanation": "Feeder constraint caps grid import to 155 kWh per hour during hours 18-20."}
+]
 """
+
 
 # -------------------------------------------------------------
 # LLM Remote Call Handlers

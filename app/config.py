@@ -1,10 +1,9 @@
 import os
 from typing import Optional
 from pydantic import BaseModel
-from dotenv import load_dotenv
-
 from pathlib import Path
 from dotenv import load_dotenv
+
 
 workspace_env = Path(__file__).resolve().parent.parent / ".env"
 if workspace_env.exists():
