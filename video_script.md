@@ -2,7 +2,8 @@
 
 **Project**: GridWise LLM — Smart Campus Energy Optimization Challenge  
 **Event**: BUP CSE Fest 2026 Hackathon (Online Preliminary Round)  
-**Target Duration**: 2 minutes 50 seconds (<= 3:00 max)
+**Target Duration**: 2 minutes 50 seconds (<= 3:00 max)  
+**Solution Video Link**: https://docs.google.com/videos/d/1p8xSfNg9vnMp0SzAO1RG8bSm4z3dci7Z0Lf_UDuorLY/play?usp=sharing  
 
 ---
 
