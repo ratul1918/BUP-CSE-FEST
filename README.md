@@ -181,22 +181,34 @@ EOF
 
 ## 5. Docker Fallback & Container Deployment
 
-Organizers and judges can pull and run the containerized service directly.
+Organizers and judges can pull and run the containerized service directly from Docker Hub without building from source.
 
-### Building & Running with Docker
+### Pull & Run from Docker Hub (Official Judge Fallback)
+```bash
+# Pull verified image from Docker Hub
+docker pull ratul1918/gridwise-llm:v1.0
+
+# Run container (binds to 0.0.0.0:8000)
+docker run -d --name gridwise-api -p 8000:8000 \
+  -e GEMINI_API_KEY="<YOUR_GEMINI_API_KEY>" \
+  -e LLM_PROVIDER="gemini" \
+  ratul1918/gridwise-llm:v1.0
+
+# Verify health (responds within 5s with {"status":"ok"})
+curl http://localhost:8000/health
+```
+
+### Local Build & Run from Source
 ```bash
 # Build Docker image
 docker build -t gridwise-llm-service:latest .
 
-# Run container (binds to 0.0.0.0:8000)
-docker run -d --name gridwise-api -p 8000:8000 gridwise-llm-service:latest
+# Run container
+docker run -d --name gridwise-api -p 8000:8000 \
+  -e GEMINI_API_KEY="<YOUR_GEMINI_API_KEY>" \
+  gridwise-llm-service:latest
 
-# Verify health
-curl http://localhost:8000/health
-```
-
-### Running with Docker Compose
-```bash
+# Or using Docker Compose
 docker-compose up -d --build
 ```
 
