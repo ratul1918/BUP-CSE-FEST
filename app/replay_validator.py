@@ -146,21 +146,8 @@ def replay_and_validate_plan(
             f"End-of-day battery neutrality violated. Final {prev_energy} != Initial {battery.initial_energy_kwh}"
         )
 
-    # Build descriptive plan_summary
-    active_directives = [d for d in directives if d.applies]
-    if active_directives:
-        dir_names = [d.directive_type.replace("_", " ") for d in active_directives]
-        summary_str = (
-            f"Successfully applied {len(active_directives)} directive(s) ({', '.join(dir_names)}). "
-            f"Optimized 24-hour battery scheduling around tariff peaks to minimize total grid cost "
-            f"while strictly respecting all reserves, windows, rate limits, and end-of-day battery neutrality."
-        )
-    else:
-        summary_str = (
-            "No active operational directives required adjustment. "
-            "Optimized 24-hour battery charge/discharge schedule against grid tariffs while "
-            "maintaining full energy balance and restoring initial battery storage level."
-        )
+    # Build rich, context-specific plan_summary
+    summary_str = build_contextual_plan_summary(plan, hours, battery, directives)
 
     return (
         round(total_grid_kwh, 2),
@@ -168,3 +155,86 @@ def replay_and_validate_plan(
         round(peak_grid_kwh, 2),
         summary_str
     )
+
+def format_hour_range(hour_list: List[int]) -> str:
+    """Format hour list into readable ranges, e.g. hours 11-13 or hours 2-4, 14-15."""
+    if not hour_list:
+        return ""
+    if len(hour_list) == 1:
+        return f"hour {hour_list[0]}"
+    ranges = []
+    start = hour_list[0]
+    prev = hour_list[0]
+    for h in hour_list[1:]:
+        if h == prev + 1:
+            prev = h
+        else:
+            ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
+            start = h
+            prev = h
+    ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
+    return f"hours {', '.join(ranges)}"
+
+def build_contextual_plan_summary(
+    plan: List[HourlyPlanEntry],
+    hours: List[HourEntry],
+    battery: BatteryConfig,
+    directives: List[DirectiveInterpretation]
+) -> str:
+    """
+    Constructs a rich, human-readable summary detailing:
+    1. Exact directive adjustments with percentages, hour windows, and caps.
+    2. Explicit mention of ignored distractor notes.
+    3. Operational dispatch strategy (economic charging hours vs peak-tariff discharging hours).
+    4. End-of-day neutrality confirmation.
+    """
+    clauses = []
+
+    for d in directives:
+        if not d.applies or not d.structured_adjustment:
+            continue
+        dtype = d.directive_type
+        adj = d.structured_adjustment
+        h_str = format_hour_range(adj.get("hours", []))
+
+        if dtype == "solar_reduction":
+            factor = float(adj.get("factor", 1.0))
+            pct = round((1.0 - factor) * 100)
+            if pct > 0:
+                clauses.append(f"uses the {pct}% reduced solar availability during {h_str}")
+            else:
+                clauses.append(f"applies the solar availability adjustment during {h_str}")
+        elif dtype == "minimum_battery_reserve":
+            req_min = float(adj.get("minimum_energy_kwh", battery.minimum_energy_kwh))
+            clauses.append(f"maintains the {req_min:.0f} kWh emergency battery reserve during {h_str}")
+        elif dtype == "no_charge_window":
+            clauses.append(f"avoids battery charging during the maintenance window in {h_str}")
+        elif dtype == "no_discharge_window":
+            clauses.append(f"keeps battery discharge at zero during testing in {h_str}")
+        elif dtype == "max_grid_window":
+            cap = float(adj.get("max_grid_kwh", 0))
+            clauses.append(f"respects the {cap:.0f} kWh grid import cap in {h_str}")
+
+    ignored_count = sum(1 for d in directives if not d.applies)
+    if ignored_count > 0:
+        clauses.append(f"ignores {ignored_count} unrelated distractor note" + ("s" if ignored_count > 1 else ""))
+
+    charge_hours = [p.hour for p in plan if p.battery_action == "charge"]
+    discharge_hours = [p.hour for p in plan if p.battery_action == "discharge"]
+
+    if discharge_hours:
+        ch_str = format_hour_range(charge_hours)
+        dis_str = format_hour_range(discharge_hours)
+        clauses.append(
+            f"shifts battery energy from economical hours ({ch_str}) to peak-tariff hours ({dis_str}) "
+            f"while restoring the initial {battery.initial_energy_kwh:.0f} kWh battery storage level"
+        )
+    else:
+        clauses.append("optimizes grid intake while preserving end-of-day battery neutrality")
+
+    if len(clauses) == 1:
+        return clauses[0].capitalize() + "."
+    elif len(clauses) == 2:
+        return f"{clauses[0].capitalize()} and {clauses[1]}."
+    else:
+        return f"{clauses[0].capitalize()}, {', '.join(clauses[1:-1])}, and {clauses[-1]}."

@@ -1,5 +1,6 @@
 import re
 import json
+import asyncio
 import logging
 from typing import List, Dict, Any, Optional
 import httpx
@@ -101,11 +102,11 @@ Output:
 
 
 # -------------------------------------------------------------
-# LLM Remote Call Handlers
+# LLM Remote Call Handlers (with Retry & Backoff)
 # -------------------------------------------------------------
 
-async def call_gemini_api(prompt: str, api_key: str, model_name: str) -> Optional[List[Dict[str, Any]]]:
-    """Call Google Gemini API using REST endpoint."""
+async def call_gemini_api(prompt: str, api_key: str, model_name: str, max_retries: int = 2) -> Optional[List[Dict[str, Any]]]:
+    """Call Google Gemini API using REST endpoint with automatic retries."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": f"{SYSTEM_PROMPT}\n\n{prompt}"}]}],
@@ -114,23 +115,36 @@ async def call_gemini_api(prompt: str, api_key: str, model_name: str) -> Optiona
             "responseMimeType": "application/json"
         }
     }
-    async with httpx.AsyncClient(timeout=settings.LLM_TIMEOUT_SECONDS) as client:
-        resp = await client.post(url, json=payload)
-        if resp.status_code == 200:
-            data = resp.json()
-            candidates = data.get("candidates", [])
-            if candidates:
-                text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                return parse_json_array(text)
+    timeout = settings.LLM_TIMEOUT_SECONDS
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                        parsed = parse_json_array(text)
+                        if parsed:
+                            return parsed
+                logger.warning("Gemini attempt %d returned HTTP %d: %s", attempt + 1, resp.status_code, resp.text[:200])
+        except Exception as e:
+            logger.warning("Gemini attempt %d failed with error: %s", attempt + 1, e)
+
+        if attempt < max_retries - 1:
+            await asyncio.sleep(1.0 * (attempt + 1))
+
     return None
 
 async def call_openai_compatible_api(
     base_url: str,
     api_key: str,
     model_name: str,
-    prompt: str
+    prompt: str,
+    max_retries: int = 2
 ) -> Optional[List[Dict[str, Any]]]:
-    """Call OpenAI or Groq compatible chat completion endpoint."""
+    """Call OpenAI or Groq compatible chat completion endpoint with automatic retries."""
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
@@ -144,12 +158,24 @@ async def call_openai_compatible_api(
         "temperature": 0.0,
         "response_format": {"type": "json_object"}
     }
-    async with httpx.AsyncClient(timeout=settings.LLM_TIMEOUT_SECONDS) as client:
-        resp = await client.post(base_url, headers=headers, json=payload)
-        if resp.status_code == 200:
-            data = resp.json()
-            text = data["choices"][0]["message"]["content"]
-            return parse_json_array(text)
+    timeout = settings.LLM_TIMEOUT_SECONDS
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(base_url, headers=headers, json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    text = data["choices"][0]["message"]["content"]
+                    parsed = parse_json_array(text)
+                    if parsed:
+                        return parsed
+                logger.warning("OpenAI/Groq attempt %d returned HTTP %d: %s", attempt + 1, resp.status_code, resp.text[:200])
+        except Exception as e:
+            logger.warning("OpenAI/Groq attempt %d failed with error: %s", attempt + 1, e)
+
+        if attempt < max_retries - 1:
+            await asyncio.sleep(1.0 * (attempt + 1))
+
     return None
 
 def parse_json_array(raw_text: str) -> Optional[List[Dict[str, Any]]]:
